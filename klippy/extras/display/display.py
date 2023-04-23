@@ -17,7 +17,9 @@ LCD_chips = {
     'st7920': st7920.ST7920, 'emulated_st7920': st7920.EmulatedST7920,
     'hd44780': hd44780.HD44780, 'uc1701': uc1701.UC1701,
     'ssd1306': uc1701.SSD1306, 'sh1106': uc1701.SH1106,
-    'hd44780_spi': hd44780_spi.hd44780_spi
+    'hd44780_spi': hd44780_spi.hd44780_spi,
+    'st7920_terminus': st7920.ST7920Terminus,
+    'st7920_smallfont': st7920.ST7920SmallFont,
 }
 
 # Storage of [display_template my_template] config sections
@@ -193,6 +195,8 @@ class PrinterLCD:
         dgroup = "_default_16x4"
         if self.lcd_chip.get_dimensions()[0] == 20:
             dgroup = "_default_20x4"
+        if self.lcd_chip.get_dimensions() == (21, 6):
+            dgroup = "_default_21x6"
         dgroup = config.get('display_group', dgroup)
         self.show_data_group = self.display_data_groups.get(dgroup)
         if self.show_data_group is None:

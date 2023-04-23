@@ -5,7 +5,7 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import logging
 from .. import bus
-from . import font8x14
+from . import font8x14, font6x12
 
 BACKGROUND_PRIORITY_CLOCK = 0x7fffffff00000000
 
@@ -137,7 +137,7 @@ class DisplayBase:
         return (16, 4)
 
 # Display driver for stock ST7920 displays
-class ST7920Base(DisplayBase):
+class ST7920(DisplayBase):
     def __init__(self, config):
         printer = config.get_printer()
         # pin config
@@ -185,13 +185,12 @@ class ST7920Base(DisplayBase):
         #logging.debug("st7920 %d %s", is_data, repr(cmds))
 
 
-
 # Display driver class that doesn't use built-in text characters and lets us
 # have fun with custom fonts
-class ST7920(ST7920Base):
+class ST7920Terminus(ST7920):
     def __init__(self, config):
         # init st7920 base
-        ST7920Base.__init__(self, config)
+        ST7920.__init__(self, config)
 
         self.font = font8x14.TERMINUS_FONT
 
@@ -220,6 +219,66 @@ class ST7920(ST7920Base):
             x += 16
         for i, bits in enumerate(data):
             self.graphics_framebuffers[gfx_fb + i][x] ^= bits # xor!
+
+
+# Display driver class with a smaller font for more space.
+class ST7920SmallFont(ST7920):
+    def __init__(self, config):
+        # init st7920 base
+        ST7920.__init__(self, config)
+
+        self.font = font6x12.TERMINUS_FONT
+
+    # putpixel places a pixel at position `x` and `y`
+    # by default `state = False` will not remove the existing pixel to avoid
+    # removing graphics, set `force_clear = True` to remove it too
+    def putpixel(self, x, y, state = True, force_clear = False):
+        # 128 x 64; but our buffer is 256 bits (32 bytes) x 32
+        if x >= 128 or y >= 64:
+            return
+
+        # figure out the byte of our pixel
+        fb_y = y
+        if fb_y >= 32: # y loops over after x 128
+            fb_y -= 32
+            x += 128
+        fb_x = x / 8
+        fb_x_bit = (8 - x % 8) - 1
+
+        current = self.graphics_framebuffers[fb_y][fb_x]
+        if state:
+            self.graphics_framebuffers[fb_y][fb_x] = current | (1 << fb_x_bit)
+        elif force_clear:
+            self.graphics_framebuffers[fb_y][fb_x] = current & ~(1 << fb_x_bit)
+
+    def write_text(self, x, y, data):
+        if x + len(data) > 21:
+            data = data[:21 - min(x, 21)]
+
+        # chars are 12x6 big, but we can overlap them somewhat to get more menu
+        # entries on the screen at once
+        pos_y = y * 10
+        for c in bytearray(data):
+            pos_x = x * 6
+            char_font = self.font[c]
+            for y_offset, char_y in enumerate(bytearray(char_font)):
+                # iterate bitwise as we painfully set each pixel, it's easier this way
+                for x_offset, bit in enumerate(("00000000" + bin(char_y)[2:])[-8:]):
+                    self.putpixel(pos_x + x_offset, pos_y + y_offset, bit == '1')
+            x += 1 # advance one char
+
+    def write_graphics(self, x, y, data):
+        if x >= 16 or y >= 4 or len(data) != 16:
+            return
+        gfx_fb = y * 16
+        if gfx_fb >= 32:
+            gfx_fb -= 32
+            x += 16
+        for i, bits in enumerate(data):
+            self.graphics_framebuffers[gfx_fb + i][x] ^= bits # xor!
+
+    def get_dimensions(self):
+        return (21, 6)
 
 
 # Helper code for toggling the en pin on startup
