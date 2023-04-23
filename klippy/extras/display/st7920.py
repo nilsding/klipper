@@ -137,7 +137,7 @@ class DisplayBase:
         return (16, 4)
 
 # Display driver for stock ST7920 displays
-class ST7920(DisplayBase):
+class ST7920Base(DisplayBase):
     def __init__(self, config):
         printer = config.get_printer()
         # pin config
@@ -183,6 +183,44 @@ class ST7920(DisplayBase):
             self.is_extended = is_extended
         cmd_type.send([self.oid, cmds], reqclock=BACKGROUND_PRIORITY_CLOCK)
         #logging.debug("st7920 %d %s", is_data, repr(cmds))
+
+
+
+# Display driver class that doesn't use built-in text characters and lets us
+# have fun with custom fonts
+class ST7920(ST7920Base):
+    def __init__(self, config):
+        # init st7920 base
+        ST7920Base.__init__(self, config)
+
+        self.font = font8x14.TERMINUS_FONT
+
+    def write_text(self, x, y, data):
+        if x + len(data) > 16:
+            data = data[:16 - min(x, 16)]
+
+        # correct offsets, lines 3 and 4 start at x pos 32
+        if y >= 2:
+            y -= 2
+            x += 16
+
+        pix_y = y * 16 # 1 char = 16px high
+        for c in bytearray(data):
+            char_font = self.font[c]
+            for y_offset, char_y in enumerate(bytearray(char_font)):
+                self.graphics_framebuffers[pix_y + y_offset][x] = char_y
+            x += 1 # advance one char
+
+    def write_graphics(self, x, y, data):
+        if x >= 16 or y >= 4 or len(data) != 16:
+            return
+        gfx_fb = y * 16
+        if gfx_fb >= 32:
+            gfx_fb -= 32
+            x += 16
+        for i, bits in enumerate(data):
+            self.graphics_framebuffers[gfx_fb + i][x] ^= bits # xor!
+
 
 # Helper code for toggling the en pin on startup
 class EnableHelper:
